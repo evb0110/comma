@@ -103,13 +103,14 @@ Generated filenames must include all relevant metadata:
 
 ## Technical Stack
 - **Framework**: Nuxt 4
+- **Package Manager**: pnpm (NOT npm - always use `pnpm install`, `pnpm add`, etc.)
 - **UI Library**: Nuxt UI (available)
 - **File Processing**: Server-side API routes for large file handling
 - **Output Formats**: DOCX and PDF generation
-- **Dependencies needed**:
-  - XML parsing library
-  - DOCX generation (e.g., docx, officegen)
-  - PDF generation (e.g., puppeteer, pdfkit)
+- **Dependencies**:
+  - fast-xml-parser (XML parsing)
+  - docx (DOCX generation)
+  - pdfkit (PDF generation)
 
 ## User Flow
 1. Landing page with URL input field

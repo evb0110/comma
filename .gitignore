@@ -26,3 +26,4 @@ logs
 # Temporary development files
 .devkit
 .playwright-mcp
+.vercel

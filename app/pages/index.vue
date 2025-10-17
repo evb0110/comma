@@ -1,119 +1,146 @@
-<script setup lang="ts">
-import type { ManuscriptMetadata } from '~/utils/comma'
+<script lang="ts" setup>
+import type { ManuscriptMetadata } from '~/utils/comma';
 
-const commaUrl = ref('')
-const loading = ref(false)
-const error = ref('')
-const metadata = ref<ManuscriptMetadata | null>(null)
+const commaUrl = ref('');
+const loading = ref(false);
+const error = ref('');
+const metadata = ref<ManuscriptMetadata | null>(null);
+
+const downloadingXml = ref(false);
+const downloadingDocx = ref(false);
+const downloadingPdf = ref(false);
 
 const parsedUrl = computed(() => {
-  if (!commaUrl.value) return null
-  return parseCoMMAUrl(commaUrl.value)
-})
+  if (!commaUrl.value) return null;
+  return parseCoMMAUrl(commaUrl.value);
+});
 
-const isValidUrl = computed(() => !!parsedUrl.value)
+const isValidUrl = computed(() => !!parsedUrl.value);
 
 const generatedFilename = computed(() => {
-  if (!metadata.value) return ''
-  return generateFilename(metadata.value, 'xml')
-})
+  if (!metadata.value) return '';
+  return generateFilename(metadata.value, 'xml');
+});
 
 async function fetchMetadata() {
   if (!parsedUrl.value) {
-    error.value = 'Please enter a valid CoMMA URL'
-    return
+    error.value = 'Please enter a valid CoMMA URL';
+    return;
   }
 
-  loading.value = true
-  error.value = ''
-  metadata.value = null
+  loading.value = true;
+  error.value = '';
+  metadata.value = null;
 
   try {
     const response = await $fetch('/api/metadata', {
       params: {
         resource: parsedUrl.value.resourceUrl
       }
-    })
+    });
 
     if (response.success) {
-      metadata.value = response.data
+      metadata.value = response.data;
     }
   } catch (err: any) {
-    error.value = err.data?.message || 'Failed to fetch metadata'
-    console.error('Fetch error:', err)
+    error.value = err.data?.message || 'Failed to fetch metadata';
+    console.error('Fetch error:', err);
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
-function downloadFile(format: string) {
-  if (!parsedUrl.value || !metadata.value) return
+async function downloadFile(format: string) {
+  if (!parsedUrl.value || !metadata.value) return;
 
-  const filename = generateFilename(metadata.value, format)
-  const downloadUrl = `/api/download?resource=${encodeURIComponent(parsedUrl.value.resourceUrl)}&format=${format}&filename=${encodeURIComponent(filename)}`
+  const loadingRef = format === 'xml' ? downloadingXml : format === 'docx' ? downloadingDocx : downloadingPdf;
 
-  const link = document.createElement('a')
-  link.href = downloadUrl
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  try {
+    loadingRef.value = true;
+
+    const filename = generateFilename(metadata.value, format);
+    const downloadUrl = `/api/download?resource=${encodeURIComponent(parsedUrl.value.resourceUrl)}&format=${format}&filename=${encodeURIComponent(filename)}`;
+
+    const response = await fetch(downloadUrl);
+
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.statusText}`);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    window.URL.revokeObjectURL(url);
+  } catch (err: any) {
+    error.value = err.message || `Failed to download ${format.toUpperCase()}`;
+    console.error('Download error:', err);
+  } finally {
+    loadingRef.value = false;
+  }
 }
 
-const exampleUrl = 'https://comma.inria.fr/doc/https%253A%252F%252Fdata.biblissima.fr%252Fentity%252FQ215980/p/f0-plat-superieur'
+const exampleUrl = 'https://comma.inria.fr/doc/https%253A%252F%252Fdata.biblissima.fr%252Fentity%252FQ215980/p/f0-plat-superieur';
 
 function useExample() {
-  commaUrl.value = exampleUrl
-  fetchMetadata()
+  commaUrl.value = exampleUrl;
+  fetchMetadata();
 }
 </script>
 
 <template>
   <div>
-    <UPageHero
-      title="CoMMA TEI XML Converter"
-      description="Convert manuscript transcriptions from CoMMA viewer to DOCX and PDF formats with automatic metadata extraction."
-    />
-
-    <UPageSection class="max-w-4xl mx-auto">
-      <div class="space-y-6">
+    <UPageSection class="max-w-5xl mx-auto">
         <div>
           <label class="block text-sm font-medium mb-2">CoMMA Viewer URL</label>
-          <UInput
-            v-model="commaUrl"
-            placeholder="https://comma.inria.fr/doc/..."
-            size="xl"
-            :disabled="loading"
-            @keyup.enter="fetchMetadata"
-          />
-          <div class="mt-2 flex items-center gap-2 text-sm text-gray-500">
-            <button
-              type="button"
-              class="underline hover:text-gray-700"
-              @click="useExample"
+          <div class="flex gap-3">
+            <UInput
+              v-model="commaUrl"
+              :disabled="loading"
+              class="w-full"
+              placeholder="https://comma.inria.fr/doc/..."
+              size="xl"
+              @keyup.enter="fetchMetadata"
+            />
+            <UButton
+              :disabled="!isValidUrl || loading"
+              :loading="loading"
+              icon="i-lucide-search"
+              size="lg"
+              variant="outline"
+              class="whitespace-nowrap"
+              @click="fetchMetadata"
             >
-              Try example
-            </button>
+              Fetch Metadata
+            </UButton>
           </div>
-        </div>
 
-        <div class="flex gap-2">
+
+
           <UButton
-            :disabled="!isValidUrl || loading"
-            :loading="loading"
+            v-if="false"
             size="lg"
-            @click="fetchMetadata"
+            variant="outline"
+            @click="useExample"
           >
-            Fetch Metadata
+            Try example
           </UButton>
         </div>
 
+
+
         <UAlert
           v-if="error"
-          color="red"
-          variant="soft"
-          :title="error"
           :close-button="{ icon: 'i-lucide-x', color: 'red', variant: 'link' }"
+          :title="error"
+          color="primary"
+          variant="soft"
           @close="error = ''"
         />
 
@@ -165,46 +192,41 @@ function useExample() {
 
             <div class="flex flex-wrap gap-3">
               <UButton
-                size="lg"
+                :disabled="downloadingXml || downloadingDocx || downloadingPdf"
+                :loading="downloadingXml"
                 icon="i-lucide-download"
+                size="lg"
                 @click="downloadFile('xml')"
               >
                 Download XML
               </UButton>
 
               <UButton
-                size="lg"
-                color="gray"
-                variant="soft"
+                :disabled="downloadingXml || downloadingDocx || downloadingPdf"
+                :loading="downloadingDocx"
+                color="secondary"
                 icon="i-lucide-file-text"
-                disabled
+                size="lg"
+                variant="soft"
+                @click="downloadFile('docx')"
               >
                 Download DOCX
-                <span class="text-xs ml-1">(Coming soon)</span>
               </UButton>
 
               <UButton
-                size="lg"
-                color="gray"
-                variant="soft"
+                :disabled="downloadingXml || downloadingDocx || downloadingPdf"
+                :loading="downloadingPdf"
+                color="secondary"
                 icon="i-lucide-file"
-                disabled
+                size="lg"
+                variant="soft"
+                @click="downloadFile('pdf')"
               >
                 Download PDF
-                <span class="text-xs ml-1">(Coming soon)</span>
               </UButton>
             </div>
           </div>
         </div>
-      </div>
-    </UPageSection>
-
-    <UPageSection class="max-w-4xl mx-auto">
-      <UPageCTA
-        title="How it works"
-        description="Paste a CoMMA viewer URL, we'll extract the metadata and generate properly named files."
-        variant="subtle"
-      />
     </UPageSection>
   </div>
 </template>
