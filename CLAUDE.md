@@ -128,3 +128,128 @@ Generated filenames must include all relevant metadata:
 - Validate CoMMA URL format before making API calls
 - Provide fallback metadata values for incomplete data
 - Handle various library formats (not just Biblissima)
+
+## Font Support
+
+### PDF Unicode Support
+PDF generation uses **Noto Serif** font (included in `/server/assets/fonts/`) which provides excellent support for medieval Latin characters including:
+- Combining diacritics (ũ, ẽ, ñ, ē, etc.)
+- Special Latin characters (ł, etc.)
+- Most medieval abbreviation marks
+
+**Font files included:**
+- `NotoSerif-Regular.ttf` (363KB)
+- `NotoSerif-Italic.ttf` (390KB)
+
+**Note:** Some very rare medieval characters may still not render. For 100% accuracy:
+- Use **XML format** - Preserves all characters exactly
+- Use **DOCX format** - Relies on system fonts in Word/LibreOffice
+
+## TypeScript and Type Safety
+
+### Type Casting Guidelines
+**CRITICAL: Minimize use of the `as` operator. Prefer proper type annotations and type inference.**
+
+#### Pattern 1: Function Parameters (Preferred over `as`)
+✅ **Good - Use type annotation:**
+```typescript
+function processPage(page: ITEIPage) { }
+```
+
+❌ **Bad - Use casting:**
+```typescript
+function processPage(page: unknown as ITEIPage) { }
+```
+
+#### Pattern 2: $fetch API Calls (Use generic type parameter)
+✅ **Good - Use generic type parameter:**
+```typescript
+const data = await $fetch<IMetadataResponse>('/api/metadata', { params })
+```
+
+❌ **Bad - Use casting:**
+```typescript
+const data = await $fetch('/api/metadata', { params }) as IMetadataResponse
+```
+
+#### Pattern 3: Query Parameters (Use type narrowing)
+✅ **Good - Type narrowing:**
+```typescript
+const resourceUrl = typeof query.resource === 'string' ? query.resource : undefined
+```
+
+❌ **Bad - Use casting:**
+```typescript
+const resourceUrl = query.resource as string
+```
+
+#### Pattern 4: Destructuring with Type Guards (Avoid `as` in catch blocks)
+✅ **Good - Standard catch pattern (required in TS 4.0+):**
+```typescript
+catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+}
+```
+
+❌ **Bad - Type assertion on unknown:**
+```typescript
+catch (error: unknown) {
+    const message = (error as Error).message  // Can throw!
+}
+```
+
+### Callback Type Inference
+**CRITICAL: Let TypeScript infer callback parameter types from array types upstream.**
+
+✅ **Good - Inferred from array type:**
+```typescript
+// ITEIContent.pages is typed as ITEIPage[]
+teiContent.pages.forEach((page) => {
+    page.lines.forEach((line) => {
+        // Types inferred: page is ITEIPage, line is ITEILine
+    })
+})
+```
+
+❌ **Bad - Explicit callback typing:**
+```typescript
+teiContent.pages.forEach((page: ITEIPage, index: number) => {
+    page.lines.forEach((line: ITEILine) => {
+        // Redundant explicit types
+    })
+})
+```
+
+### Explicit Return Types
+**CRITICAL: Remove unnecessary explicit return type annotations where TypeScript can infer them.**
+
+✅ **Good - Inferred return type:**
+```typescript
+const processNodes = (nodes: TXMLNode[]) => {
+    // Return type inferred from function body
+}
+```
+
+❌ **Bad - Unnecessary explicit return type:**
+```typescript
+const processNodes = (nodes: TXMLNode[]): void => {
+    // Explicit void is redundant for simple functions
+}
+```
+
+### Interface Naming Convention
+All interfaces must follow the `I` prefix pattern per ESLint rules:
+```typescript
+interface IMetadataResponse { }      // ✓ Good
+interface INavigationResponse { }    // ✓ Good
+interface MetadataResponse { }       // ✗ Bad - Missing I prefix
+```
+
+### Verification
+After making type-related changes, **ALWAYS** run both:
+```bash
+pnpm run lint      # Check ESLint rules
+pnpm run typecheck # Verify TypeScript types
+```
+
+Both must pass with no errors before considering work complete.

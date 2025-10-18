@@ -1,71 +1,89 @@
-import { parseTEIXML } from '../utils/tei-parser'
-import { convertTEIToDocx } from '../utils/docx-converter'
-import { convertTEIToPdf } from '../utils/pdf-converter'
+import { convertTEIToDocx } from '~~/server/utils/docx-converter'
+import { convertTEIToPdf } from '~~/server/utils/pdf-converter'
+import { parseTEIXML } from '~~/server/utils/tei-parser'
+
+interface IMetadataResponse {
+    data: {
+        title: string
+        repository: string
+        shelfMark: string
+        dating: string
+        language?: string
+        iiifManifestUrl?: string
+    }
+}
 
 export default defineEventHandler(async (event) => {
-  const query = getQuery(event)
-  const resourceUrl = query.resource as string
-  const format = (query.format as string) || 'xml'
-  const filename = (query.filename as string) || 'document.xml'
+    const query = getQuery(event)
+    const resourceUrl = typeof query.resource === 'string' ? query.resource : undefined
+    const format = typeof query.format === 'string' ? query.format : undefined
+    const filename = typeof query.filename === 'string' ? query.filename : undefined
 
-  if (!resourceUrl) {
-    throw createError({
-      statusCode: 400,
-      message: 'Resource URL is required'
-    })
-  }
-
-  try {
-    const xmlData = await $fetch(`https://comma.inria.fr/api/document/`, {
-      params: {
-        resource: resourceUrl
-      },
-      responseType: 'text'
-    }) as string
-
-    if (format === 'xml') {
-      setResponseHeaders(event, {
-        'Content-Type': 'application/xml',
-        'Content-Disposition': `attachment; filename="${filename}"`
-      })
-      return xmlData
+    if (!resourceUrl) {
+        throw createError({
+            statusCode: 400,
+            message: 'Resource URL is required',
+        })
     }
 
-    const metadataResponse = await $fetch('/api/metadata', {
-      params: { resource: resourceUrl }
-    }) as any
+    try {
+        const xmlData = await $fetch<string>(`https://comma.inria.fr/api/document/`, {
+            params: { resource: resourceUrl },
+            responseType: 'text',
+        })
 
-    const metadata = metadataResponse.data
+        if (format === 'xml') {
+            const xmlBuffer = Buffer.from(xmlData, 'utf-8')
+            const finalFilename = filename || 'document.xml'
+            setResponseHeaders(event, {
+                'Content-Type': 'application/xml; charset=utf-8',
+                'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(finalFilename)}`,
+                'Content-Length': xmlBuffer.length.toString(),
+                'Cache-Control': 'no-cache',
+            })
+            return xmlBuffer
+        }
 
-    const teiContent = parseTEIXML(xmlData)
+        const metadataResponse = await $fetch<IMetadataResponse>('/api/metadata', { params: { resource: resourceUrl } })
 
-    if (format === 'docx') {
-      const buffer = await convertTEIToDocx(teiContent, metadata)
-      setResponseHeaders(event, {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition': `attachment; filename="${filename}"`
-      })
-      return buffer
+        const metadata = metadataResponse.data
+
+        const teiContent = parseTEIXML(xmlData)
+
+        if (format === 'docx') {
+            const buffer = await convertTEIToDocx(teiContent, metadata)
+            const finalFilename = filename || 'document.docx'
+            setResponseHeaders(event, {
+                'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(finalFilename)}`,
+                'Content-Length': buffer.length.toString(),
+                'Cache-Control': 'no-cache',
+            })
+            return buffer
+        }
+
+        if (format === 'pdf') {
+            const buffer = await convertTEIToPdf(teiContent, metadata)
+            const finalFilename = filename || 'document.pdf'
+            setResponseHeaders(event, {
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(finalFilename)}`,
+                'Content-Length': buffer.length.toString(),
+                'Cache-Control': 'no-cache',
+            })
+            return buffer
+        }
+
+        throw createError({
+            statusCode: 400,
+            message: 'Unsupported format. Supported formats: xml, docx, pdf',
+        })
     }
-
-    if (format === 'pdf') {
-      const buffer = await convertTEIToPdf(teiContent, metadata)
-      setResponseHeaders(event, {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`
-      })
-      return buffer
+    catch (error: unknown) {
+        console.error('Download error:', error)
+        throw createError({
+            statusCode: 500,
+            message: error instanceof Error ? error.message : 'Failed to download document',
+        })
     }
-
-    throw createError({
-      statusCode: 400,
-      message: 'Unsupported format. Supported formats: xml, docx, pdf'
-    })
-  } catch (error: any) {
-    console.error('Download error:', error)
-    throw createError({
-      statusCode: 500,
-      message: error.message || 'Failed to download document'
-    })
-  }
 })
